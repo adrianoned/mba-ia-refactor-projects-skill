@@ -584,23 +584,144 @@ A skill `refactor-arch` foi estruturada com **1 arquivo de instrução** (`SKILL
 
 ## C) Resultados
 
-*Esta seção será preenchida após a execução da skill nos 3 projetos.*
-
 ### Resultados por Projeto
 
 | Métrica | Projeto 1 (code-smells) | Projeto 2 (ecommerce-legacy) | Projeto 3 (task-manager) |
 |---|---|---|---|
 | Stack detectada | Python / Flask 3.1.1 | Node.js / Express 4.18 | Python / Flask 3.0 |
 | Arquivos analisados | 4 | 3 | 13 |
-| CRITICAL | *a executar* | *a executar* | *a executar* |
-| HIGH | *a executar* | *a executar* | *a executar* |
-| MEDIUM | *a executar* | *a executar* | *a executar* |
-| LOW | *a executar* | *a executar* | *a executar* |
-| App funciona pós-refatoração | *a executar* | *a executar* | *a executar* |
+| CRITICAL | 4 | *a executar* | *a executar* |
+| HIGH | 5 | *a executar* | *a executar* |
+| MEDIUM | 7 | *a executar* | *a executar* |
+| LOW | 3 | *a executar* | *a executar* |
+| **TOTAL** | **19** | *a executar* | *a executar* |
+| App funciona pós-refatoração | ✅ | *a executar* | *a executar* |
 
-### Checklist de Validação
+---
 
-*Será preenchido após cada execução.*
+### Projeto 1 — code-smells-project (Python/Flask — E-commerce API)
+
+#### Antes da Refatoração
+
+```
+code-smells-project/
+├── app.py              # 88 linhas — rotas, config, endpoint SQL arbitrário
+├── controllers.py      # 292 linhas — handlers + validações + side effects
+├── models.py           # 314 linhas — 4 domínios, SQL Injection, N+1 queries
+└── database.py         # 86 linhas — singleton global, seeds inline
+```
+
+**Problemas principais**: 100% das queries com SQL Injection, endpoint `/admin/query` executando SQL arbitrário, senhas em plaintext, SECRET_KEY hardcoded, God Module de 314 linhas com 4 domínios.
+
+#### Depois da Refatoração
+
+```
+code-smells-project/
+├── .env                            # Variáveis de ambiente
+├── .gitignore                      # Exclusão de .env, *.db, reports/
+├── src/
+│   ├── app.py                      # Entry point — apenas bootstrap (50 linhas)
+│   ├── config/
+│   │   └── settings.py             # Configurações via env vars + constantes
+│   ├── models/
+│   │   ├── database.py             # Conexão Flask g (sem singleton global)
+│   │   ├── produto_model.py        # CRUD produtos — queries parametrizadas
+│   │   ├── usuario_model.py        # CRUD usuarios — pbkdf2_hmac + salt
+│   │   └── pedido_model.py         # CRUD pedidos — batch fetching (sem N+1)
+│   ├── controllers/
+│   │   ├── produto_controller.py   # Validações e regras de produto
+│   │   ├── usuario_controller.py   # Autenticação + validação de email
+│   │   └── pedido_controller.py    # Orquestração de pedidos
+│   ├── views/
+│   │   └── routes.py               # Blueprints — apenas roteamento
+│   ├── middlewares/
+│   │   └── error_handler.py        # Tratamento centralizado de erros
+│   └── services/
+│       └── notification_service.py # Side effects isolados
+└── reports/
+    └── audit-project-1.md          # Relatório completo da auditoria
+```
+
+#### Anti-Patterns Corrigidos
+
+| # | Anti-Pattern | Severidade | Status | Como foi corrigido |
+|---|---|---|---|---|
+| AP-01 | Hardcoded Credentials | CRITICAL | ✅ | `.env` + `config/settings.py` |
+| AP-02 | SQL Injection (20 ocorrências) | CRITICAL | ✅ | 100% placeholders `?` parametrizados |
+| AP-03 | God Module (314 linhas) | CRITICAL | ✅ | 3 models por domínio (produto, usuario, pedido) |
+| AP-04 | Raw SQL Endpoint `/admin/query` | CRITICAL | ✅ | Endpoint removido — retorna 404 |
+| AP-05 | Business Logic in Routes | HIGH | ✅ | Controllers dedicados com validação própria |
+| AP-06 | Global Mutable State | HIGH | ✅ | Flask `g` — conexão por request |
+| AP-07 | Insecure Password (plaintext) | HIGH | ✅ | pbkdf2_hmac SHA256 + salt (100k iterações) |
+| AP-09 | N+1 Queries | HIGH | ✅ | Batch fetching `WHERE id IN (...)` |
+| AP-15 | Exposed Sensitive Data | HIGH | ✅ | Sem `senha`, `secret_key`, `db_path` nas respostas |
+| AP-10 | Duplicate Code | MEDIUM | ✅ | Helpers `_produto_to_dict`, `_buscar_itens_pedidos` |
+| AP-11 | Missing Validation | MEDIUM | ✅ | Validação de email (regex), senha, ranges, categorias |
+| AP-12 | Bare Except (17 ocorrências) | MEDIUM | ✅ | Error handlers centralizados + exceções específicas |
+| AP-17 | Mixed Concerns / Side Effects | MEDIUM | ✅ | `NotificationService` isolado |
+| AP-13 | Magic Numbers | LOW | ✅ | Constantes em `settings.py` (FAIXAS_DESCONTO, etc.) |
+| AP-14 | Print Statements (15 ocorrências) | LOW | ✅ | Módulo `logging` com níveis e timestamps |
+| AP-18 | Inconsistent Patterns | LOW | ✅ | Blueprints padronizados, formato de resposta consistente |
+
+#### Validação de Endpoints
+
+Todos os **15 endpoints** testados e funcionando após a refatoração:
+
+```
+✅ GET  /                          — Home com listagem de endpoints
+✅ GET  /health                    — Health check sem dados sensíveis
+✅ GET  /produtos                  — Listagem de produtos
+✅ GET  /produtos/<id>             — Busca por ID
+✅ POST /produtos                  — Criação com validação
+✅ PUT  /produtos/<id>             — Atualização com validação
+✅ DELETE /produtos/<id>           — Soft-delete
+✅ GET  /produtos/busca?q=...      — Busca parametrizada
+✅ GET  /usuarios                  — Listagem sem campo senha
+✅ GET  /usuarios/<id>             — Busca sem campo senha
+✅ POST /usuarios                  — Criação com validação de email/senha
+✅ POST /login                     — Autenticação com pbkdf2_hmac
+✅ GET  /pedidos                   — Listagem (sem N+1)
+✅ POST /pedidos                   — Criação com notificações isoladas
+✅ GET  /relatorios/vendas         — Relatório com métricas
+✅ POST /admin/query → 404         — Endpoint removido com sucesso
+✅ POST /admin/reset-db            — Reset seguro mantido
+```
+
+#### Checklist de Validação — Projeto 1
+
+| Fase | Item | Status |
+|---|---|---|
+| **Fase 1** | Linguagem detectada corretamente | ✅ Python |
+| | Framework detectado corretamente | ✅ Flask 3.1.1 |
+| | Domínio descrito corretamente | ✅ E-commerce API |
+| | Arquivos analisados condizem | ✅ 4 arquivos |
+| **Fase 2** | Relatório segue o template | ✅ |
+| | Findings com arquivo e linha exatos | ✅ |
+| | Ordenados por severidade | ✅ CRITICAL → LOW |
+| | ≥ 5 findings | ✅ 19 findings |
+| | APIs deprecated verificadas | ✅ |
+| | Pausa e confirmação | ✅ |
+| **Fase 3** | Estrutura MVC criada | ✅ |
+| | Configuração externalizada | ✅ `.env` + `settings.py` |
+| | Models por domínio | ✅ 3 arquivos de model |
+| | Views/Routes separadas | ✅ Blueprints |
+| | Controllers com lógica de negócio | ✅ 3 controllers |
+| | Error handling centralizado | ✅ `middlewares/error_handler.py` |
+| | Entry point limpo | ✅ `src/app.py` (bootstrap) |
+| | Aplicação inicia sem erros | ✅ |
+| | Endpoints originais respondem | ✅ 15/15 |
+
+### Projeto 2 e 3
+
+*Resultados serão preenchidos após a execução da skill nos projetos restantes.*
+
+#### Checklist de Validação — Projeto 2 (ecommerce-api-legacy)
+
+*A executar.*
+
+#### Checklist de Validação — Projeto 3 (task-manager-api)
+
+*A executar.*
 
 ---
 
@@ -636,22 +757,38 @@ claude "/refactor-arch"
 
 ### Como Validar
 
-**Projeto 1 e 3 (Flask):**
+**Projeto 1 (Flask — refatorado):**
 ```bash
-python app.py
-# ou (após refatoração)
-python src/app.py
+cd code-smells-project
+PYTHONPATH=. python src/app.py
+# Acessar: http://localhost:5000
 # Testar endpoints:
 curl http://localhost:5000/
 curl http://localhost:5000/health
 curl http://localhost:5000/produtos
+curl -X POST http://localhost:5000/login -H "Content-Type: application/json" -d '{"email":"admin@loja.com","senha":"admin123"}'
+# Verificar que /admin/query foi removido:
+curl -X POST http://localhost:5000/admin/query -H "Content-Type: application/json" -d '{"sql":"SELECT 1"}'
+# Deve retornar 404
 ```
 
 **Projeto 2 (Express):**
 ```bash
+cd ecommerce-api-legacy
 npm start
 # Testar endpoints:
 curl http://localhost:3000/
+```
+
+**Projeto 3 (Flask):**
+```bash
+cd task-manager-api
+python app.py
+# ou (após refatoração)
+PYTHONPATH=. python src/app.py
+# Testar endpoints:
+curl http://localhost:5000/
+curl http://localhost:5000/health
 ```
 
 ### Estrutura da Skill
