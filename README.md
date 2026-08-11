@@ -588,14 +588,14 @@ A skill `refactor-arch` foi estruturada com **1 arquivo de instrução** (`SKILL
 
 | Métrica | Projeto 1 (code-smells) | Projeto 2 (ecommerce-legacy) | Projeto 3 (task-manager) |
 |---|---|---|---|
-| Stack detectada | Python / Flask 3.1.1 | Node.js / Express 4.18 | Python / Flask 3.0 |
+| Stack detectada | Python / Flask 3.1.1 | Node.js / Express 4.18.2 | Python / Flask 3.0 |
 | Arquivos analisados | 4 | 3 | 13 |
-| CRITICAL | 4 | *a executar* | *a executar* |
-| HIGH | 5 | *a executar* | *a executar* |
-| MEDIUM | 7 | *a executar* | *a executar* |
-| LOW | 3 | *a executar* | *a executar* |
-| **TOTAL** | **19** | *a executar* | *a executar* |
-| App funciona pós-refatoração | ✅ | *a executar* | *a executar* |
+| CRITICAL | 4 | 4 | *a executar* |
+| HIGH | 5 | 5 | *a executar* |
+| MEDIUM | 7 | 8 | *a executar* |
+| LOW | 3 | 3 | *a executar* |
+| **TOTAL** | **19** | **20** | *a executar* |
+| App funciona pós-refatoração | ✅ | ✅ | *a executar* |
 
 ---
 
@@ -711,11 +711,117 @@ Todos os **15 endpoints** testados e funcionando após a refatoração:
 | | Aplicação inicia sem erros | ✅ |
 | | Endpoints originais respondem | ✅ 15/15 |
 
-### Projeto 2 e 3
+### Projeto 2 — ecommerce-api-legacy (Node.js/Express — LMS API com Checkout)
 
-*Resultados serão preenchidos após a execução da skill nos projetos restantes.*
+#### Antes da Refatoração
 
-#### Checklist de Validação — Projeto 2 (ecommerce-api-legacy)
+```
+ecommerce-api-legacy/
+├── api.http                 # Exemplos de requisições
+├── package.json             # Express + sqlite3
+└── src/
+    ├── app.js               # Entry point — cria AppManager, sobe servidor
+    ├── AppManager.js        # God Class (141 linhas) — DB, rotas, checkout, relatórios
+    └── utils.js             # Credenciais hardcoded, crypto caseira, estado global
+```
+
+**Problemas principais**: 4 credenciais em plaintext (incluindo `pk_live_` de gateway de pagamento), God Class de 141 linhas com 5 responsabilidades, criptografia caseira `badCrypto()` (loop Base64), callback hell com 5 níveis de aninhamento, cartão de crédito logado em `console.log`, N+1 queries no relatório financeiro.
+
+#### Depois da Refatoração
+
+```
+ecommerce-api-legacy/
+├── .env                                # Variáveis de ambiente (dotenv)
+├── .gitignore                          # Exclusão de .env, reports/
+├── api.http                            # Exemplos de requisições (preservado)
+├── package.json                        # Express + sqlite3 + dotenv
+└── src/
+    ├── app.js                          # Entry point / composition root (DI)
+    ├── config/
+    │   ├── database.js                 # Schema + seeds do SQLite (extraído do AppManager)
+    │   └── settings.js                 # Configurações via process.env
+    ├── models/
+    │   ├── AuditLog.js                 # Acesso a dados: audit_logs
+    │   ├── Course.js                   # Acesso a dados: courses
+    │   ├── Enrollment.js               # Acesso a dados: enrollments
+    │   ├── Payment.js                  # Acesso a dados: payments
+    │   └── User.js                     # Acesso a dados: users + crypto.scrypt()
+    ├── controllers/
+    │   ├── CheckoutController.js       # Fluxo de checkout (async/await)
+    │   ├── ReportController.js         # Relatório financeiro (batch queries)
+    │   └── UserController.js           # Deleção de usuário
+    ├── routes/
+    │   └── index.js                    # Rotas — thin layer (extrai params, delega)
+    ├── middlewares/
+    │   └── errorHandler.js             # Tratamento centralizado de erros
+    └── utils/
+        └── crypto.js                   # crypto.scrypt() — hash seguro de senhas
+```
+
+#### Anti-Patterns Corrigidos
+
+| # | Anti-Pattern | Severidade | Status | Como foi corrigido |
+|---|---|---|---|---|
+| AP-01 | Hardcoded Credentials | CRITICAL | ✅ | `.env` + `config/settings.js` + `dotenv` |
+| AP-03 | God Class AppManager (141 linhas) | CRITICAL | ✅ | 5 models + 3 controllers + routes + database.js |
+| AP-03 | God Module utils.js | CRITICAL | ✅ | Separado em config/, utils/crypto.js |
+| AP-05 | Business Logic in Routes (checkout) | HIGH | ✅ | `CheckoutController.execute()` — lógica pura |
+| AP-05 | Business Logic in Routes (relatório) | HIGH | ✅ | `ReportController.generate()` — async/await |
+| AP-06 | Global Mutable State | HIGH | ✅ | `globalCache`/`totalRevenue` removidos |
+| AP-07 | Insecure Password (badCrypto) | HIGH | ✅ | `crypto.scrypt()` — salt 16 bytes, keylen 64, 16384 iterações |
+| AP-15 | Exposed Sensitive Data (cartão em log) | HIGH | ✅ | Cartão nunca mais logado |
+| AP-08 | Callback Hell (checkout) | MEDIUM | ✅ | async/await — 5 níveis → fluxo linear |
+| AP-08 | Callback Hell (relatório) | MEDIUM | ✅ | async/await + `Promise.all()` batch |
+| AP-09 | N+1 Queries (relatório) | MEDIUM | ✅ | 4 queries batch: cursos → matrículas → usuários → pagamentos |
+| AP-10 | Duplicate Code | MEDIUM | ✅ | Models centralizam acesso a dados (DRY) |
+| AP-11 | Missing Input Validation | MEDIUM | ✅ | Validação de email (regex), campos obrigatórios |
+| AP-12 | Bare Except (10 ocorrências) | MEDIUM | ✅ | `errorHandler` middleware + mensagens específicas |
+| AP-16 | Deprecated APIs (callbacks) | MEDIUM | ✅ | async/await nativo (sem `util.promisify()` necessário) |
+| AP-17 | Mixed Concerns (logAndCache) | MEDIUM | ✅ | Auditoria não bloqueante (try/catch isolado) |
+| AP-13 | Magic Numbers (prefixo Visa, senha default) | LOW | ✅ | Constante `VISA_CARD_PREFIX = '4'` |
+| AP-14 | Print Statements (3 ocorrências) | LOW | ✅ | `console.log` apenas no entry point; `console.error` no middleware |
+| AP-18 | Inconsistent Patterns (this vs self) | LOW | ✅ | Arrow functions → `this` consistente, campos nomeados descritivamente |
+
+#### Validação de Endpoints
+
+Todos os **3 endpoints** testados e funcionando após a refatoração:
+
+```
+✅ POST /api/checkout                — Checkout com sucesso (Visa): {"msg":"Sucesso","enrollment_id":2}
+✅ POST /api/checkout                — Pagamento recusado: "Pagamento recusado" (400)
+✅ GET  /api/admin/financial-report  — Relatório com revenue + students por curso (batch queries)
+✅ DELETE /api/users/:id             — Deleção de usuário com mensagem legada preservada
+```
+
+#### Checklist de Validação — Projeto 2
+
+| Fase | Item | Status |
+|---|---|---|
+| **Fase 1** | Linguagem detectada corretamente | ✅ JavaScript (Node.js) |
+| | Framework detectado corretamente | ✅ Express.js 4.18.2 |
+| | Domínio descrito corretamente | ✅ LMS API (cursos, checkout, usuários) |
+| | Arquivos analisados condizem | ✅ 3 arquivos |
+| **Fase 2** | Relatório segue o template | ✅ |
+| | Findings com arquivo e linha exatos | ✅ |
+| | Ordenados por severidade | ✅ CRITICAL → LOW |
+| | ≥ 5 findings | ✅ 20 findings |
+| | APIs deprecated verificadas | ✅ `badCrypto()`, callbacks aninhados |
+| | Pausa e confirmação | ✅ |
+| **Fase 3** | Estrutura MVC criada | ✅ config/ models/ controllers/ routes/ middlewares/ |
+| | Configuração externalizada | ✅ `.env` + `settings.js` + `dotenv` |
+| | Models por entidade | ✅ 5 models (User, Course, Enrollment, Payment, AuditLog) |
+| | Routes separadas | ✅ `routes/index.js` — thin layer |
+| | Controllers com lógica de negócio | ✅ 3 controllers com DI |
+| | Error handling centralizado | ✅ `middlewares/errorHandler.js` |
+| | Entry point limpo | ✅ `src/app.js` (composition root + DI) |
+| | Aplicação inicia sem erros | ✅ |
+| | Endpoints originais respondem | ✅ 3/3 |
+
+### Projeto 3
+
+*Resultados serão preenchidos após a execução da skill no projeto restante.*
+
+#### Checklist de Validação — Projeto 3 (task-manager-api)
 
 *A executar.*
 
