@@ -592,10 +592,10 @@ A skill `refactor-arch` foi estruturada com **1 arquivo de instrução** (`SKILL
 | Arquivos analisados | 4 | 3 | 13 |
 | CRITICAL | 4 | 4 | *a executar* |
 | HIGH | 5 | 5 | *a executar* |
-| MEDIUM | 7 | 8 | *a executar* |
-| LOW | 3 | 3 | *a executar* |
-| **TOTAL** | **19** | **20** | *a executar* |
-| App funciona pós-refatoração | ✅ | ✅ | *a executar* |
+| MEDIUM | 7 | 8 | 6 |
+| LOW | 3 | 3 | 4 |
+| **TOTAL** | **19** | **20** | **13** |
+| App funciona pós-refatoração | ✅ | ✅ | ✅ |
 
 ---
 
@@ -817,17 +817,125 @@ Todos os **3 endpoints** testados e funcionando após a refatoração:
 | | Aplicação inicia sem erros | ✅ |
 | | Endpoints originais respondem | ✅ 3/3 |
 
-### Projeto 3
+### Projeto 3 — task-manager-api (Python/Flask — Task Manager API)
 
-*Resultados serão preenchidos após a execução da skill no projeto restante.*
+#### Antes da Refatoração
 
-#### Checklist de Validação — Projeto 3 (task-manager-api)
+```
+task-manager-api/
+├── app.py                          # Bootstrap — SECRET_KEY hardcoded, DEBUG=True
+├── database.py                     # SQLAlchemy init
+├── models/
+│   ├── task.py                     # datetime.utcnow(), is_overdue() não usado
+│   ├── user.py                     # MD5 para senhas, password no to_dict()
+│   └── category.py                 # datetime.utcnow()
+├── routes/
+│   ├── task_routes.py              # Lógica overdue duplicada, bare excepts
+│   ├── user_routes.py              # Senha min. 4 chars, fake JWT token
+│   └── report_routes.py            # Categorias no blueprint errado, overdue duplicado
+├── services/
+│   └── notification_service.py     # SMTP creds hardcoded, código morto
+├── utils/
+│   └── helpers.py                  # Imports não usados, constantes duplicadas
+├── seed.py                         # Script de seed
+└── requirements.txt                # Flask 3.0, SQLAlchemy, marshmallow
+```
 
-*A executar.*
+**Problemas principais**: Senhas com MD5 (quebrado), password hash exposto em toda resposta da API, credenciais SMTP hardcoded, `datetime.utcnow()` deprecated (8 ocorrências), lógica overdue duplicada em 4 lugares sem usar `is_overdue()` do model, categorias no blueprint de relatórios, bare excepts sem rollback, fake JWT token.
 
-#### Checklist de Validação — Projeto 3 (task-manager-api)
+#### Depois da Refatoração
 
-*A executar.*
+```
+task-manager-api/
+├── .env / .gitignore                    ✅ Externalizados
+├── config/
+│   └── settings.py                      ✅ Configs via env vars + constantes
+├── models/
+│   ├── user.py                          ✅ pbkdf2_hmac, sem password no to_dict
+│   ├── task.py                          ✅ datetime.now(timezone.utc), is_overdue() c/ tz
+│   └── category.py                      ✅ datetime.now(timezone.utc)
+├── routes/
+│   ├── task_routes.py                   ✅ logging, rollback, usa is_overdue()
+│   ├── user_routes.py                   ✅ email regex, senha 8 chars, secrets.token_hex()
+│   ├── report_routes.py                 ✅ Apenas relatórios, _make_aware() helper
+│   └── category_routes.py               ✅ Blueprint próprio (separado de reports)
+├── services/
+│   └── notification_service.py          ✅ SMTP creds via settings (externalizadas)
+├── utils/
+│   └── helpers.py                       ✅ Imports limpos, constantes centralizadas
+├── app.py                               ✅ Bootstrap com create_app(), logging
+└── reports/
+    └── audit-project-3.md               ✅ 13 findings documentados
+```
+
+#### Anti-Patterns Corrigidos
+
+| # | Anti-Pattern | Severidade | Status | Como foi corrigido |
+|---|---|---|---|---|
+| AP-07 | MD5 para Hash de Senhas | HIGH | ✅ | pbkdf2_hmac SHA256 + salt 32 bytes (100k iterações) |
+| AP-01 | Hardcoded SMTP Credentials | HIGH | ✅ | `config/settings.py` via `os.getenv()` |
+| AP-15 | Password Hash Exposto no to_dict() | HIGH | ✅ | Campo `password` removido do `to_dict()` |
+| AP-16 | datetime.utcnow() (8 ocorrências) | MEDIUM | ✅ | `datetime.now(timezone.utc)` em todos models/routes |
+| AP-10 | Lógica Overdue Duplicada (4 locais) | MEDIUM | ✅ | Uso de `task.is_overdue()` centralizado no model |
+| AP-11 | Senha Mínima 4 Caracteres | MEDIUM | ✅ | Elevado para 8 (`MIN_PASSWORD_LENGTH = 8`) |
+| AP-12 | Bare Except (6 ocorrências) | MEDIUM | ✅ | `except Exception` + `db.session.rollback()` + logging |
+| AP-17 | Categorias no Blueprint Errado | MEDIUM | ✅ | `routes/category_routes.py` com blueprint próprio |
+| AP-17b | NotificationService Código Morto | MEDIUM | ✅ | Mantido como service, SMTP creds externalizadas |
+| AP-13 | Magic Numbers/Strings | LOW | ✅ | Constantes centralizadas em `config/settings.py` |
+| AP-14 | Print Statements (10 ocorrências) | LOW | ✅ | Módulo `logging` com níveis e timestamps |
+| AP-18 | Fake JWT Token | LOW | ✅ | `secrets.token_hex(32)` — token criptograficamente seguro |
+| AP-18b | Imports Não Utilizados | LOW | ✅ | Removidos `json`, `os`, `sys`, `time`, `hashlib`, `math` |
+
+#### Validação de Endpoints
+
+Todos os endpoints testados e funcionando após a refatoração:
+
+```
+✅ GET  /                             — API info (v2.0)
+✅ GET  /health                       — Health check
+✅ POST /users                        — Criação com email regex + senha 8 chars
+✅ GET  /users                        — Listagem sem campo password
+✅ GET  /users/<id>                   — Detalhe com tasks (usa is_overdue)
+✅ PUT  /users/<id>                   — Atualização com validação
+✅ DELETE /users/<id>                 — Cascade delete de tasks
+✅ POST /login                        — Autenticação pbkdf2_hmac, token seguro
+✅ POST /tasks                        — Criação com validação de status/prioridade/date
+✅ GET  /tasks                        — Listagem com is_overdue(), user_name, category_name
+✅ GET  /tasks/<id>                   — Busca por ID
+✅ PUT  /tasks/<id>                   — Atualização parcial com rollback
+✅ DELETE /tasks/<id>                 — Deleção com rollback
+✅ GET  /tasks/search?q=...           — Busca parametrizada (SQLAlchemy filter)
+✅ GET  /tasks/stats                  — Stats com overdue via is_overdue()
+✅ POST /categories                   — Criação (blueprint próprio)
+✅ GET  /categories                   — Listagem com task_count
+✅ PUT  /categories/<id>              — Atualização
+✅ DELETE /categories/<id>            — Deleção
+✅ GET  /reports/summary              — Relatório agregado com overdue + user productivity
+✅ GET  /reports/user/<id>            — Relatório individual com métricas
+```
+
+#### Checklist de Validação — Projeto 3
+
+| Fase | Item | Status |
+|---|---|---|
+| **Fase 1** | Linguagem detectada corretamente | ✅ Python |
+| | Framework detectado corretamente | ✅ Flask 3.0 + SQLAlchemy |
+| | Domínio descrito corretamente | ✅ Task Manager API |
+| | Arquivos analisados condizem | ✅ 15 arquivos |
+| **Fase 2** | Relatório segue o template | ✅ |
+| | Findings com arquivo e linha exatos | ✅ |
+| | Ordenados por severidade | ✅ CRITICAL → LOW |
+| | ≥ 5 findings | ✅ 13 findings |
+| | APIs deprecated verificadas | ✅ datetime.utcnow() (8 ocorrências) |
+| | Pausa e confirmação | ✅ |
+| **Fase 3** | Estrutura MVC melhorada | ✅ config/, routes/ reorganizados |
+| | Configuração externalizada | ✅ `.env` + `config/settings.py` |
+| | Models sem dados sensíveis | ✅ `to_dict()` sem password |
+| | Categorias em blueprint próprio | ✅ `category_routes.py` |
+| | Error handling com rollback | ✅ Todos os except com `db.session.rollback()` |
+| | Logging estruturado | ✅ Módulo `logging` substituiu `print()` |
+| | Aplicação inicia sem erros | ✅ |
+| | Endpoints originais respondem | ✅ 21/21 |
 
 ---
 
@@ -878,23 +986,35 @@ curl -X POST http://localhost:5000/admin/query -H "Content-Type: application/jso
 # Deve retornar 404
 ```
 
-**Projeto 2 (Express):**
+**Projeto 2 (Express — refatorado):**
 ```bash
 cd ecommerce-api-legacy
 npm start
 # Testar endpoints:
-curl http://localhost:3000/
+curl -X POST http://localhost:3000/api/checkout \
+  -H "Content-Type: application/json" \
+  -d '{"usr":"Aluno","eml":"aluno@teste.com","pwd":"123456","c_id":1,"card":"4111"}'
+curl http://localhost:3000/api/admin/financial-report
 ```
 
-**Projeto 3 (Flask):**
+**Projeto 3 (Flask — refatorado):**
 ```bash
 cd task-manager-api
 python app.py
-# ou (após refatoração)
-PYTHONPATH=. python src/app.py
 # Testar endpoints:
 curl http://localhost:5000/
 curl http://localhost:5000/health
+curl -X POST http://localhost:5000/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Teste","email":"teste@email.com","password":"senha123456"}'
+curl -X POST http://localhost:5000/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teste@email.com","password":"senha123456"}'
+curl http://localhost:5000/tasks/stats
+curl http://localhost:5000/reports/summary
+# Verificar que senhas não vazam:
+curl http://localhost:5000/users | python -m json.tool
+# Campo "password" não deve aparecer
 ```
 
 ### Estrutura da Skill
