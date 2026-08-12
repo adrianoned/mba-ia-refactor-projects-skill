@@ -589,9 +589,9 @@ A skill `refactor-arch` foi estruturada com **1 arquivo de instrução** (`SKILL
 | Métrica | Projeto 1 (code-smells) | Projeto 2 (ecommerce-legacy) | Projeto 3 (task-manager) |
 |---|---|---|---|
 | Stack detectada | Python / Flask 3.1.1 | Node.js / Express 4.18.2 | Python / Flask 3.0 |
-| Arquivos analisados | 4 | 3 | 13 |
-| CRITICAL | 4 | 4 | *a executar* |
-| HIGH | 5 | 5 | *a executar* |
+| Arquivos analisados | 4 | 3 | 15 |
+| CRITICAL | 4 | 4 | 0 |
+| HIGH | 5 | 5 | 3 |
 | MEDIUM | 7 | 8 | 6 |
 | LOW | 3 | 3 | 4 |
 | **TOTAL** | **19** | **20** | **13** |
