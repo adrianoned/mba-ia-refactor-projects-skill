@@ -6,6 +6,8 @@ Usa Blueprints para organizacao por dominio.
 from flask import Blueprint, request, jsonify, current_app
 from src.controllers import produto_controller, usuario_controller, pedido_controller
 from src.services.notification_service import NotificationService
+from src.services.admin_service import AdminService
+from src.services.health_service import HealthService
 
 
 # --- Blueprints ---
@@ -180,18 +182,11 @@ def relatorio_vendas():
 
 @admin_bp.route("/admin/reset-db", methods=["POST"])
 def reset_database():
-    """Reset seguro do banco — sem SQL arbitrario (TR-04)."""
-    from src.models.database import get_db
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM itens_pedido")
-    cursor.execute("DELETE FROM pedidos")
-    cursor.execute("DELETE FROM produtos")
-    cursor.execute("DELETE FROM usuarios")
-    db.commit()
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning("Banco de dados resetado via endpoint admin")
+    """Reset seguro do banco — delega para AdminService.
+
+    Sem SQL arbitrario (TR-04) e sem logica de acesso a dados na rota (AP-05).
+    """
+    AdminService().reset_database()
     return jsonify({"mensagem": "Banco de dados resetado", "sucesso": True}), 200
 
 
@@ -201,32 +196,14 @@ def reset_database():
 
 @root_bp.route("/health", methods=["GET"])
 def health_check():
-    """Health check seguro — nao expoe secret_key, db_path ou debug."""
-    from src.models.database import get_db
-    import sqlite3
-    try:
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute("SELECT 1")
-        cursor.execute("SELECT COUNT(*) FROM produtos")
-        produtos = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM usuarios")
-        usuarios = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM pedidos")
-        pedidos = cursor.fetchone()[0]
+    """Health check seguro — delega para HealthService.
 
-        return jsonify({
-            "status": "ok",
-            "database": "connected",
-            "counts": {
-                "produtos": produtos,
-                "usuarios": usuarios,
-                "pedidos": pedidos,
-            },
-            "versao": "1.0.0",
-        }), 200
-    except sqlite3.Error as e:
-        return jsonify({"status": "error", "mensagem": "Falha na conexao com banco"}), 500
+    Nao expoe secret_key, db_path ou debug, e nao acessa o banco na rota (AP-05).
+    """
+    dados, erro = HealthService().check()
+    if erro:
+        return jsonify({"status": "error", "mensagem": erro}), 500
+    return jsonify(dados), 200
 
 
 # ============================================================
