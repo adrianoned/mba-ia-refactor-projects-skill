@@ -1,6 +1,7 @@
 """Rotas de Relatorios — apenas endpoints de report.
 Categorias movidas para category_routes.py (TR-17)."""
 from flask import Blueprint, jsonify
+from database import db
 from models.task import Task
 from models.user import User
 from datetime import datetime, timezone, timedelta
@@ -105,7 +106,7 @@ def summary_report():
 
 @report_bp.route("/reports/user/<int:user_id>", methods=["GET"])
 def user_report(user_id):
-    user = User.query.get(user_id)
+    user = db.session.get(User,user_id)
     if not user:
         return jsonify({"error": "Usuario nao encontrado"}), 404
 

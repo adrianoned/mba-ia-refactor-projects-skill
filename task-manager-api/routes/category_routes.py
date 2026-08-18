@@ -48,7 +48,7 @@ def create_category():
 
 @category_bp.route("/categories/<int:cat_id>", methods=["PUT"])
 def update_category(cat_id):
-    cat = Category.query.get(cat_id)
+    cat = db.session.get(Category,cat_id)
     if not cat:
         return jsonify({"error": "Categoria nao encontrada"}), 404
 
@@ -71,7 +71,7 @@ def update_category(cat_id):
 
 @category_bp.route("/categories/<int:cat_id>", methods=["DELETE"])
 def delete_category(cat_id):
-    cat = Category.query.get(cat_id)
+    cat = db.session.get(Category,cat_id)
     if not cat:
         return jsonify({"error": "Categoria nao encontrada"}), 404
 

@@ -28,7 +28,7 @@ def get_tasks():
 
 @task_bp.route("/tasks/<int:task_id>", methods=["GET"])
 def get_task(task_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task,task_id)
     if task:
         return jsonify(task.to_dict()), 200
     return jsonify({"error": "Task nao encontrada"}), 404
@@ -58,13 +58,13 @@ def create_task():
 
     user_id = data.get("user_id")
     if user_id:
-        user = User.query.get(user_id)
+        user = db.session.get(User,user_id)
         if not user:
             return jsonify({"error": "Usuario nao encontrado"}), 404
 
     category_id = data.get("category_id")
     if category_id:
-        cat = Category.query.get(category_id)
+        cat = db.session.get(Category,category_id)
         if not cat:
             return jsonify({"error": "Categoria nao encontrada"}), 404
 
@@ -100,7 +100,7 @@ def create_task():
 
 @task_bp.route("/tasks/<int:task_id>", methods=["PUT"])
 def update_task(task_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task,task_id)
     if not task:
         return jsonify({"error": "Task nao encontrada"}), 404
 
@@ -130,14 +130,14 @@ def update_task(task_id):
 
     if "user_id" in data:
         if data["user_id"]:
-            user = User.query.get(data["user_id"])
+            user = db.session.get(User,data["user_id"])
             if not user:
                 return jsonify({"error": "Usuario nao encontrado"}), 404
         task.user_id = data["user_id"]
 
     if "category_id" in data:
         if data["category_id"]:
-            cat = Category.query.get(data["category_id"])
+            cat = db.session.get(Category,data["category_id"])
             if not cat:
                 return jsonify({"error": "Categoria nao encontrada"}), 404
         task.category_id = data["category_id"]
@@ -167,7 +167,7 @@ def update_task(task_id):
 
 @task_bp.route("/tasks/<int:task_id>", methods=["DELETE"])
 def delete_task(task_id):
-    task = Task.query.get(task_id)
+    task = db.session.get(Task,task_id)
     if not task:
         return jsonify({"error": "Task nao encontrada"}), 404
 
