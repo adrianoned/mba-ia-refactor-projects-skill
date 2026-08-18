@@ -306,14 +306,39 @@ def executar_query():
 **Simplesmente REMOVA o endpoint inteiro.** Se for necessário para admin, crie endpoints específicos com comandos predefinidos:
 
 ```python
-# Alternativa segura — endpoints específicos com ações predefinidas
+# services/admin_service.py — a operação vive no SERVICE (não na rota)
+import logging
+from src.models.database import get_db
+
+logger = logging.getLogger(__name__)
+
+
+class AdminService:
+    def reset_database(self):
+        """Reset seguro — operação predefinida, sem SQL arbitrário."""
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM itens_pedido")
+        cursor.execute("DELETE FROM pedidos")
+        cursor.execute("DELETE FROM produtos")
+        cursor.execute("DELETE FROM usuarios")
+        db.commit()
+        logger.warning("Banco de dados resetado via AdminService")
+```
+
+```python
+# views/routes.py — a rota apenas delega (SEM get_db/cursor/commit inline)
+from src.services.admin_service import AdminService
+
 @admin_bp.route("/admin/reset-db", methods=["POST"])
 @require_admin
 def reset_database():
-    """Endpoint específico para reset — sem SQL arbitrário"""
-    admin_service.reset_database()
+    """Endpoint específico para reset — sem SQL arbitrário e sem lógica na rota."""
+    AdminService().reset_database()
     return jsonify({"mensagem": "Banco resetado"}), 200
 ```
+
+> **ATENÇÃO (causa raiz de reincidência)**: deixar `get_db()`, `cursor.execute(...)` e `commit()` diretamente no handler da rota — mesmo com operações predefinidas — NÃO resolve o problema por inteiro. Isso mantém a violação (Business Logic in Routes). Qualquer operação administrativa deve viver em um service dedicado (`AdminService`); a rota apenas instancia o service e delega.
 
 ---
 
@@ -536,6 +561,14 @@ async function verifyPassword(password, stored) {
     });
 }
 ```
+
+---
+
+### Regras adicionais (Aplicáveis a qualquer linguagem)
+
+1. **Nunca use senha default com fallback** — padrões como `password || '123456'` (Node.js) ou `dados.get("senha", "123456")` (Python). Exija a senha do usuário e valide presença/complexidade.
+2. **Hasheie também as senhas dos seeds** — dados iniciais gravados como `'123'`, `'admin'`, `'senha123'` em texto puro também são problemas. Aplique `hashPassword()`/`hash_password()` antes de persistir no seed.
+3. **Verifique TODOS os pontos de persistência de senha** — criação de usuário, seed, migração e reset de senha devem passar pelo mesmo hash.
 
 ---
 
