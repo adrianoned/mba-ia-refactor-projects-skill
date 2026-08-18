@@ -2,10 +2,14 @@
  * CheckoutController — orquestra o fluxo de checkout de curso.
  * Contém a lógica de negócio pura, sem dependência HTTP (req/res).
  */
-const { settings } = require('../config/settings');
+const { logger } = require('../utils/logger');
+const { PAYMENT_STATUS } = require('../utils/constants');
 
 /** Prefixo Visa — usado na simulação de autorização de pagamento */
 const VISA_CARD_PREFIX = '4';
+
+/** Comprimento mínimo exigido para a senha do usuário */
+const MIN_PASSWORD_LENGTH = 6;
 
 class CheckoutController {
   /**
@@ -36,14 +40,14 @@ class CheckoutController {
    * @param {Object} params
    * @param {string} params.userName — nome do usuário
    * @param {string} params.email — email do usuário
-   * @param {string} params.password — senha (opcional, default "123456" — compatibilidade com legado)
+   * @param {string} params.password — senha do usuário (obrigatória)
    * @param {number} params.courseId — ID do curso
    * @param {string} params.cardNumber — número do cartão de crédito
    * @returns {Object} { enrollmentId }
    */
   async execute({ userName, email, password, courseId, cardNumber }) {
     // Validação de campos obrigatórios
-    const errors = this._validate({ userName, email, courseId, cardNumber });
+    const errors = this._validate({ userName, email, password, courseId, cardNumber });
     if (errors.length) {
       const err = new Error(errors[0]);
       err.statusCode = 400;
@@ -61,8 +65,7 @@ class CheckoutController {
     // Busca ou cria usuário
     let user = await this.userModel.findByEmail(email);
     if (!user) {
-      const pwd = password || '123456'; // default legado
-      const userId = await this.userModel.create(userName, email, pwd);
+      const userId = await this.userModel.create(userName, email, password);
       user = { id: userId, name: userName, email };
     }
 
@@ -82,7 +85,7 @@ class CheckoutController {
     try {
       await this.auditLogModel.create(`Checkout curso ${courseId} por ${user.id}`);
     } catch (auditErr) {
-      console.error(`[AUDIT] Falha ao registrar auditoria: ${auditErr.message}`);
+      logger.warn(`Falha ao registrar auditoria: ${auditErr.message}`);
     }
 
     return { enrollment_id: enrollmentId };
@@ -91,16 +94,30 @@ class CheckoutController {
   /**
    * Valida campos obrigatórios do checkout.
    */
-  _validate({ userName, email, courseId, cardNumber }) {
+  _validate({ userName, email, password, courseId, cardNumber }) {
     const errors = [];
     if (!userName) errors.push('Nome do usuário é obrigatório');
     if (!email) errors.push('Email é obrigatório');
+    if (!password) errors.push('Senha é obrigatória');
+    else if (password.length < MIN_PASSWORD_LENGTH) {
+      errors.push(`Senha deve ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres`);
+    }
     if (!courseId) errors.push('ID do curso é obrigatório');
     if (!cardNumber) errors.push('Número do cartão é obrigatório');
 
     // Validação de formato de email
     if (email && !/^[a-zA-Z0-9+_.-]+@[a-zA-Z0-9.-]+$/.test(email)) {
       errors.push('Email inválido');
+    }
+
+    // courseId deve ser inteiro positivo
+    if (courseId !== undefined && courseId !== null && (!Number.isInteger(courseId) || courseId <= 0)) {
+      errors.push('ID do curso inválido');
+    }
+
+    // Número do cartão: apenas dígitos (13 a 19)
+    if (cardNumber && !/^\d{13,19}$/.test(cardNumber)) {
+      errors.push('Número do cartão inválido');
     }
 
     return errors;
@@ -115,7 +132,7 @@ class CheckoutController {
     const approved = cardNumber.startsWith(VISA_CARD_PREFIX);
     return {
       approved,
-      status: approved ? 'PAID' : 'DENIED',
+      status: approved ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.DENIED,
     };
   }
 }

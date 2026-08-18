@@ -1,8 +1,11 @@
 /**
  * Inicialização do banco de dados SQLite em memória.
  * Schema, seeds e conexão gerenciados aqui — sem God Class.
+ * Senhas dos seeds são hasheadas (nunca plaintext).
  */
 const sqlite3 = require('sqlite3').verbose();
+const { hashPassword } = require('../utils/crypto');
+const { PAYMENT_STATUS } = require('../utils/constants');
 
 const SCHEMA_SQL = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -38,24 +41,55 @@ const SCHEMA_SQL = [
   )`,
 ];
 
-const SEED_SQL = [
-  `INSERT INTO users (name, email, pass) VALUES ('Leonan', 'leonan@fullcycle.com.br', '123')`,
-  `INSERT INTO courses (title, price, active) VALUES ('Clean Architecture', 997.00, 1), ('Docker', 497.00, 1)`,
-  `INSERT INTO enrollments (user_id, course_id) VALUES (1, 1)`,
-  `INSERT INTO payments (enrollment_id, amount, status) VALUES (1, 997.00, 'PAID')`,
-];
+/**
+ * Executa uma instrução SQL retornando uma Promise (sequencial).
+ * @param {import('sqlite3').Database} db
+ * @param {string} sql
+ * @param {Array} [params]
+ */
+function run(db, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve(this);
+    });
+  });
+}
 
 /**
  * Inicializa o banco: cria tabelas e insere seeds.
- * Retorna a instância do banco.
+ * A senha do usuário seed é hasheada antes de persistir (nunca plaintext).
+ * @returns {Promise<import('sqlite3').Database>}
  */
-function initDatabase() {
+async function initDatabase() {
   const db = new sqlite3.Database(':memory:');
 
-  db.serialize(() => {
-    SCHEMA_SQL.forEach(sql => db.run(sql));
-    SEED_SQL.forEach(sql => db.run(sql));
-  });
+  for (const sql of SCHEMA_SQL) {
+    await run(db, sql);
+  }
+
+  // Seed — senha hasheada via crypto.scrypt
+  const leonanPassHash = await hashPassword('123');
+  await run(
+    db,
+    'INSERT INTO users (name, email, pass) VALUES (?, ?, ?)',
+    ['Leonan', 'leonan@fullcycle.com.br', leonanPassHash]
+  );
+  await run(
+    db,
+    'INSERT INTO courses (title, price, active) VALUES (?, ?, ?), (?, ?, ?)',
+    ['Clean Architecture', 997.00, 1, 'Docker', 497.00, 1]
+  );
+  await run(
+    db,
+    'INSERT INTO enrollments (user_id, course_id) VALUES (?, ?)',
+    [1, 1]
+  );
+  await run(
+    db,
+    'INSERT INTO payments (enrollment_id, amount, status) VALUES (?, ?, ?)',
+    [1, 997.00, PAYMENT_STATUS.PAID]
+  );
 
   return db;
 }

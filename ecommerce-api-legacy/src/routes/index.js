@@ -2,6 +2,7 @@
  * Definição de rotas da API.
  * Camada VIEW: apenas extrai parâmetros da requisição,
  * delega ao controller e formata a resposta HTTP.
+ * Erros são propagados (next) para o middleware centralizado.
  * ZERO lógica de negócio aqui.
  */
 const { Router } = require('express');
@@ -18,7 +19,7 @@ function registerRoutes(controllers) {
   const { checkoutController, reportController, userController } = controllers;
 
   // POST /api/checkout — fluxo de checkout de curso
-  router.post('/api/checkout', async (req, res) => {
+  router.post('/api/checkout', async (req, res, next) => {
     try {
       const result = await checkoutController.execute({
         userName: req.body.usr,
@@ -29,30 +30,28 @@ function registerRoutes(controllers) {
       });
       res.status(200).json({ msg: 'Sucesso', enrollment_id: result.enrollment_id });
     } catch (err) {
-      const statusCode = err.statusCode || 500;
-      res.status(statusCode).send(err.message);
+      next(err);
     }
   });
 
   // GET /api/admin/financial-report — relatório financeiro
-  router.get('/api/admin/financial-report', async (req, res) => {
+  router.get('/api/admin/financial-report', async (req, res, next) => {
     try {
       const report = await reportController.generate();
       res.json(report);
     } catch (err) {
-      res.status(500).send('Erro ao gerar relatório');
+      next(err);
     }
   });
 
   // DELETE /api/users/:id — deletar usuário
-  router.delete('/api/users/:id', async (req, res) => {
+  router.delete('/api/users/:id', async (req, res, next) => {
     try {
       const id = parseInt(req.params.id, 10);
       const result = await userController.delete(id);
       res.send(result.message);
     } catch (err) {
-      const statusCode = err.statusCode || 500;
-      res.status(statusCode).send(err.message);
+      next(err);
     }
   });
 

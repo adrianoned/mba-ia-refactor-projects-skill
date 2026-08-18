@@ -169,6 +169,8 @@ Reestruturar o projeto para o padrão MVC, eliminando os problemas encontrados n
    - Corrija SQL Injection usando queries parametrizadas
    - Substitua hashing inseguro (MD5, SHA1) por bcrypt/scrypt/argon2
    - Remova exposição de dados sensíveis em respostas
+   - Extraia operações administrativas de banco (ex: `reset-db`) para um service dedicado (`AdminService`) — **nunca** deixe `get_db()`/`cursor.execute()`/`commit()` direto no handler da rota
+   - Remova senhas default (ex: `password || '123456'`) e hasheie **também** as senhas dos seeds/dados iniciais — nunca plaintext em seed 
 
 4. **Valide o resultado**:
    - Verifique se a aplicação inicia sem erros
@@ -197,6 +199,8 @@ Validation
 - **Mantenha a aplicação funcionando**: A cada mudança significativa, teste se a aplicação ainda inicia
 - **Não mude APIs públicas**: Endpoints devem manter mesma URL, método HTTP e formato de resposta
 - **Preserve a lógica de negócio**: O comportamento deve ser idêntico ao original
+- **Nunca deixe acesso a dados em handlers de rota**: se um endpoint precisar de `get_db()`/`cursor.execute()`/`commit()`, extraia para `services/`
+- **Nunca use senha default nem seed em plaintext**: senha deve ser sempre exigida e hasheada, inclusive em dados iniciais 
 - **Use as dependências existentes**: Não adicione novas bibliotecas a menos que estritamente necessário
 - **Siga as convenções da linguagem**: Use snake_case para Python, camelCase para JavaScript/Node.js
 - **Documente as mudanças**: Adicione comentários explicativos onde apropriado

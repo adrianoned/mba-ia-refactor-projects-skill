@@ -53,6 +53,24 @@ class PaymentModel {
     });
   }
 
+  /**
+   * Remove pagamentos de múltiplas matrículas de uma vez (cascata na deleção).
+   */
+  deleteByEnrollmentIds(enrollmentIds) {
+    if (!enrollmentIds.length) return Promise.resolve(0);
+    const placeholders = enrollmentIds.map(() => '?').join(',');
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        `DELETE FROM payments WHERE enrollment_id IN (${placeholders})`,
+        enrollmentIds,
+        function (err) {
+          if (err) return reject(err);
+          resolve(this.changes);
+        }
+      );
+    });
+  }
+
   static toJSON(row) {
     if (!row) return null;
     return {

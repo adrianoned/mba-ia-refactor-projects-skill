@@ -11,6 +11,7 @@ const { settings } = require('./config/settings');
 const { initDatabase } = require('./config/database');
 const { errorHandler } = require('./middlewares/errorHandler');
 const { registerRoutes } = require('./routes/index');
+const { logger } = require('./utils/logger');
 
 // Models
 const { UserModel } = require('./models/User');
@@ -24,12 +25,12 @@ const { CheckoutController } = require('./controllers/CheckoutController');
 const { ReportController } = require('./controllers/ReportController');
 const { UserController } = require('./controllers/UserController');
 
-function createApp() {
+async function createApp() {
   const app = express();
   app.use(express.json());
 
-  // Inicializa banco de dados
-  const db = initDatabase();
+  // Inicializa banco de dados (async — seeds com senha hasheada)
+  const db = await initDatabase();
 
   // Instancia models (cada um recebe a conexão via construtor — DI)
   const userModel = new UserModel(db);
@@ -45,7 +46,7 @@ function createApp() {
   const reportController = new ReportController(
     courseModel, enrollmentModel, paymentModel, userModel
   );
-  const userController = new UserController(userModel);
+  const userController = new UserController(userModel, enrollmentModel, paymentModel);
 
   // Registra rotas
   const routes = registerRoutes({ checkoutController, reportController, userController });
@@ -59,10 +60,16 @@ function createApp() {
 
 // Bootstrap
 if (require.main === module) {
-  const app = createApp();
-  app.listen(settings.port, () => {
-    console.log(`LMS API rodando na porta ${settings.port}...`);
-  });
+  createApp()
+    .then((app) => {
+      app.listen(settings.port, () => {
+        logger.info(`LMS API rodando na porta ${settings.port}...`);
+      });
+    })
+    .catch((err) => {
+      logger.error(`Falha ao iniciar a aplicação: ${err.message}`);
+      process.exit(1);
+    });
 }
 
 module.exports = { createApp };

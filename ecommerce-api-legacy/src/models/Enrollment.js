@@ -53,6 +53,38 @@ class EnrollmentModel {
     });
   }
 
+  /**
+   * Busca matrículas de um usuário.
+   */
+  findByUserId(userId) {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        'SELECT id, user_id, course_id FROM enrollments WHERE user_id = ?',
+        [userId],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
+    });
+  }
+
+  /**
+   * Remove todas as matrículas de um usuário (usado na deleção em cascata).
+   */
+  deleteByUserId(userId) {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        'DELETE FROM enrollments WHERE user_id = ?',
+        [userId],
+        function (err) {
+          if (err) return reject(err);
+          resolve(this.changes);
+        }
+      );
+    });
+  }
+
   static toJSON(row) {
     if (!row) return null;
     return {

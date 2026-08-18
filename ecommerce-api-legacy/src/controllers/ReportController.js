@@ -2,6 +2,8 @@
  * ReportController — gera relatório financeiro agregado por curso.
  * Substitui as queries N+1 por queries batch (4 queries no total).
  */
+const { PAYMENT_STATUS } = require('../utils/constants');
+
 class ReportController {
   /**
    * @param {import('../models/Course').CourseModel} courseModel
@@ -69,7 +71,7 @@ class ReportController {
       const students = courseEnrollments.map(enr => {
         const payment = paymentByEnrollment[enr.id];
         const user = userMap[enr.user_id];
-        const amount = (payment && payment.status === 'PAID') ? payment.amount : 0;
+        const amount = (payment && payment.status === PAYMENT_STATUS.PAID) ? payment.amount : 0;
         revenue += amount;
         return {
           student: user ? user.name : 'Unknown',

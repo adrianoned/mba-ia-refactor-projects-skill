@@ -19,7 +19,7 @@ Content-Type: application/json
 {
   "usr": "João",
   "eml": "joao@teste.com",
-  "pwd": "123",
+  "pwd": "123456",
   "c_id": 1,
   "card": "5111222233334444"
 }
