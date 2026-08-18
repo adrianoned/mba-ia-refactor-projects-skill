@@ -597,6 +597,12 @@ A skill `refactor-arch` foi estruturada com **1 arquivo de instrução** (`SKILL
 | **TOTAL** | **19** | **20** | **13** |
 | App funciona pós-refatoração | ✅ | ✅ | ✅ |
 
+> **Nota sobre re-auditorias**: os três projetos passaram por **múltiplas passadas**. Após a Fase 3 inicial, rodadas complementares eliminaram resíduos e corrigiram reincidências:
+>
+> - **Projeto 1** — 2ª passada (extraiu `reset-db` e `health-check` para services) + 3ª passada (removeu os arquivos legados vulneráveis da raiz). Resultado: **0 CRITICAL/HIGH remanescentes**, `POST /admin/query` → 404.
+> - **Projeto 2** — re-auditoria encontrou 10 achados residuais (4 HIGH / 4 MEDIUM / 2 LOW), todos corrigidos; senha do seed fortalecida (`'123'` → `'Leonan@123'`, hasheada via `crypto.scrypt`).
+> - **Projeto 3** — 2ª passada encontrou 10 achados residuais (1 HIGH / 6 MEDIUM / 3 LOW): seed quebrado, `Query.get()` deprecated (14×), `datetime.utcnow()` no seed, senhas de seed fracas, código morto (`utils/`, `services/`). Todos corrigidos.
+
 ---
 
 ### Projeto 1 — code-smells-project (Python/Flask — E-commerce API)
@@ -619,28 +625,30 @@ code-smells-project/
 code-smells-project/
 ├── .env                            # Variáveis de ambiente
 ├── .gitignore                      # Exclusão de .env, *.db, reports/
-├── src/
-│   ├── app.py                      # Entry point — apenas bootstrap (50 linhas)
-│   ├── config/
-│   │   └── settings.py             # Configurações via env vars + constantes
-│   ├── models/
-│   │   ├── database.py             # Conexão Flask g (sem singleton global)
-│   │   ├── produto_model.py        # CRUD produtos — queries parametrizadas
-│   │   ├── usuario_model.py        # CRUD usuarios — pbkdf2_hmac + salt
-│   │   └── pedido_model.py         # CRUD pedidos — batch fetching (sem N+1)
-│   ├── controllers/
-│   │   ├── produto_controller.py   # Validações e regras de produto
-│   │   ├── usuario_controller.py   # Autenticação + validação de email
-│   │   └── pedido_controller.py    # Orquestração de pedidos
-│   ├── views/
-│   │   └── routes.py               # Blueprints — apenas roteamento
-│   ├── middlewares/
-│   │   └── error_handler.py        # Tratamento centralizado de erros
-│   └── services/
-│       └── notification_service.py # Side effects isolados
-└── reports/
-    └── audit-project-1.md          # Relatório completo da auditoria
+└── src/
+    ├── app.py                      # Entry point — apenas bootstrap (50 linhas)
+    ├── config/
+    │   └── settings.py             # Configurações via env vars + constantes
+    ├── models/
+    │   ├── database.py             # Conexão Flask g (sem singleton global)
+    │   ├── produto_model.py        # CRUD produtos — queries parametrizadas
+    │   ├── usuario_model.py        # CRUD usuarios — pbkdf2_hmac + salt
+    │   └── pedido_model.py         # CRUD pedidos — batch fetching (sem N+1)
+    ├── controllers/
+    │   ├── produto_controller.py   # Validações e regras de produto
+    │   ├── usuario_controller.py   # Autenticação + validação de email
+    │   └── pedido_controller.py    # Orquestração de pedidos
+    ├── views/
+    │   └── routes.py               # Blueprints — apenas roteamento (delega)
+    ├── middlewares/
+    │   └── error_handler.py        # Tratamento centralizado de erros
+    └── services/
+        ├── admin_service.py        # reset-db (AdminService) — sem SQL na rota
+        ├── health_service.py       # health-check (HealthService) — sem SQL na rota
+        └── notification_service.py # Side effects isolados
 ```
+
+> **Nota (3ª passada)**: os arquivos **legados** da raiz (`app.py`, `controllers.py`, `models.py`, `database.py`) — que continham os anti-patterns originais (endpoint `/admin/query` com SQL arbitrário, `SECRET_KEY` hardcoded, SQL Injection) — foram **removidos** do repositório. A versão pré-refatoração permanece no histórico do git. O entry point correto é `python -m src.app`.
 
 #### Anti-Patterns Corrigidos
 
@@ -665,11 +673,25 @@ code-smells-project/
 
 #### Validação de Endpoints
 
-Todos os **15 endpoints** testados e funcionando após a refatoração:
+Todos os **15 endpoints** testados e funcionando após a refatoração. **Log real de execução** (capturado via `test_client` do Flask, estado final):
+
+```
+2026-08-18 [INFO] src.app: Aplicacao iniciada — DEBUG=False
+Boot: OK — blueprints: ['admin', 'pedidos', 'produtos', 'root', 'usuarios']
+/                      -> 200 (OK)
+/health                -> 200 (OK)
+/produtos              -> 200 (OK)
+/usuarios              -> 200 (OK)
+/pedidos               -> 200 (OK)
+/relatorios/vendas     -> 200 (OK)
+/admin/query           -> 404 (OK)   ← endpoint de SQL arbitrário removido
+```
+
+**Mapa completo de endpoints:**
 
 ```
 ✅ GET  /                          — Home com listagem de endpoints
-✅ GET  /health                    — Health check sem dados sensíveis
+✅ GET  /health                    — Health check sem dados sensíveis (delega a HealthService)
 ✅ GET  /produtos                  — Listagem de produtos
 ✅ GET  /produtos/<id>             — Busca por ID
 ✅ POST /produtos                  — Criação com validação
@@ -684,7 +706,7 @@ Todos os **15 endpoints** testados e funcionando após a refatoração:
 ✅ POST /pedidos                   — Criação com notificações isoladas
 ✅ GET  /relatorios/vendas         — Relatório com métricas
 ✅ POST /admin/query → 404         — Endpoint removido com sucesso
-✅ POST /admin/reset-db            — Reset seguro mantido
+✅ POST /admin/reset-db            — Reset seguro via AdminService (sem SQL na rota)
 ```
 
 #### Checklist de Validação — Projeto 1
@@ -755,7 +777,9 @@ ecommerce-api-legacy/
     ├── middlewares/
     │   └── errorHandler.js             # Tratamento centralizado de erros
     └── utils/
-        └── crypto.js                   # crypto.scrypt() — hash seguro de senhas
+        ├── crypto.js                   # crypto.scrypt() — hash seguro de senhas
+        ├── constants.js                # PAYMENT_STATUS (elimina magic strings)
+        └── logger.js                   # Logging estruturado (níveis + timestamp)
 ```
 
 #### Anti-Patterns Corrigidos
@@ -784,11 +808,22 @@ ecommerce-api-legacy/
 
 #### Validação de Endpoints
 
-Todos os **3 endpoints** testados e funcionando após a refatoração:
+Todos os **3 endpoints** testados e funcionando após a refatoração. **Log real de execução** (servidor real na porta efêmera, estado final):
+
+```
+Boot: OK — servidor na porta 64994
+POST /api/checkout (Visa)        -> 200 {"msg":"Sucesso","enrollment_id":2}
+[ERROR] POST /api/checkout: Pagamento recusado
+POST /api/checkout (recusado)    -> 400 Pagamento recusado
+[ERROR] POST /api/checkout: Senha é obrigatória
+POST /api/checkout (sem senha)   -> 400 Senha é obrigatória   ← senha default removida
+GET  /api/admin/financial-report -> 200
+```
 
 ```
 ✅ POST /api/checkout                — Checkout com sucesso (Visa): {"msg":"Sucesso","enrollment_id":2}
 ✅ POST /api/checkout                — Pagamento recusado: "Pagamento recusado" (400)
+✅ POST /api/checkout (sem senha)    — "Senha é obrigatória" (400) — sem fallback default
 ✅ GET  /api/admin/financial-report  — Relatório com revenue + students por curso (batch queries)
 ✅ DELETE /api/users/:id             — Deleção de usuário com mensagem legada preservada
 ```
@@ -848,25 +883,23 @@ task-manager-api/
 ```
 task-manager-api/
 ├── .env / .gitignore                    ✅ Externalizados
+├── app.py                               ✅ Bootstrap com create_app(), logging
+├── database.py                          ✅ db = SQLAlchemy()
+├── seed.py                              ✅ Corrigido — usa create_app(); senhas de seed fortes
 ├── config/
-│   └── settings.py                      ✅ Configs via env vars + constantes
+│   └── settings.py                      ✅ Fonte única de constantes + env vars
 ├── models/
 │   ├── user.py                          ✅ pbkdf2_hmac, sem password no to_dict
 │   ├── task.py                          ✅ datetime.now(timezone.utc), is_overdue() c/ tz
 │   └── category.py                      ✅ datetime.now(timezone.utc)
-├── routes/
-│   ├── task_routes.py                   ✅ logging, rollback, usa is_overdue()
-│   ├── user_routes.py                   ✅ email regex, senha 8 chars, secrets.token_hex()
-│   ├── report_routes.py                 ✅ Apenas relatórios, _make_aware() helper
-│   └── category_routes.py               ✅ Blueprint próprio (separado de reports)
-├── services/
-│   └── notification_service.py          ✅ SMTP creds via settings (externalizadas)
-├── utils/
-│   └── helpers.py                       ✅ Imports limpos, constantes centralizadas
-├── app.py                               ✅ Bootstrap com create_app(), logging
-└── reports/
-    └── audit-project-3.md               ✅ 13 findings documentados
+└── routes/
+    ├── task_routes.py                   ✅ db.session.get(), logging, rollback, is_overdue()
+    ├── user_routes.py                   ✅ email regex, senha 8 chars, secrets.token_hex()
+    ├── report_routes.py                 ✅ Apenas relatórios, _make_aware() helper
+    └── category_routes.py               ✅ Blueprint próprio (separado de reports)
 ```
+
+> **Nota (2ª passada)**: os diretórios `services/` (com `notification_service.py` morto) e `utils/` (com `helpers.py` duplicando constantes de `settings.py` e 0 referências) foram **removidos** — eram código morto. O `seed.py`, que estava **quebrado** (`from app import app` → `ImportError`), foi corrigido para usar `create_app()`.
 
 #### Anti-Patterns Corrigidos
 
@@ -880,15 +913,43 @@ task-manager-api/
 | AP-11 | Senha Mínima 4 Caracteres | MEDIUM | ✅ | Elevado para 8 (`MIN_PASSWORD_LENGTH = 8`) |
 | AP-12 | Bare Except (6 ocorrências) | MEDIUM | ✅ | `except Exception` + `db.session.rollback()` + logging |
 | AP-17 | Categorias no Blueprint Errado | MEDIUM | ✅ | `routes/category_routes.py` com blueprint próprio |
-| AP-17b | NotificationService Código Morto | MEDIUM | ✅ | Mantido como service, SMTP creds externalizadas |
+| AP-17b | NotificationService Código Morto | MEDIUM | ✅ | `services/` removido (código morto, 0 referências) |
 | AP-13 | Magic Numbers/Strings | LOW | ✅ | Constantes centralizadas em `config/settings.py` |
 | AP-14 | Print Statements (10 ocorrências) | LOW | ✅ | Módulo `logging` com níveis e timestamps |
 | AP-18 | Fake JWT Token | LOW | ✅ | `secrets.token_hex(32)` — token criptograficamente seguro |
 | AP-18b | Imports Não Utilizados | LOW | ✅ | Removidos `json`, `os`, `sys`, `time`, `hashlib`, `math` |
 
+**2ª passada (commit `2beb7a6`) — achados residuais corrigidos:**
+
+| Finding | Severidade | Correção |
+|---|---|---|
+| `seed.py` quebrado (`from app import app` → ImportError) | HIGH | `from app import create_app` + `create_app()` |
+| `datetime.utcnow()` (5× no seed) | MEDIUM | `datetime.now(timezone.utc)` |
+| `Query.get()` deprecated (14×) | MEDIUM | `db.session.get(Model, id)` |
+| Senhas de seed fracas (`1234`/`abcd`/`pass`) | MEDIUM | `admin@123`/`user@1234`/`manager@123` (hasheadas) |
+| Constantes duplicadas (`settings.py` vs `helpers.py`) | MEDIUM | `utils/helpers.py` removido |
+| Código morto + validação duplicada | MEDIUM | `utils/helpers.py` removido |
+| `NotificationService` código morto | MEDIUM | `services/` removido |
+| Regex de email inconsistente | LOW | eliminado com `utils/helpers.py` |
+
 #### Validação de Endpoints
 
-Todos os endpoints testados e funcionando após a refatoração:
+Todos os endpoints testados e funcionando após a refatoração. **Log real de execução** (via `test_client` do Flask, estado final):
+
+```
+2026-08-18 [INFO] routes.user_routes: Login: joao@email.com
+Boot: OK — blueprints: ['categories', 'reports', 'tasks', 'users']
+/                      -> 200 (OK)
+/health                -> 200 (OK)
+/tasks                 -> 200 (OK)
+/users                 -> 200 (OK)
+/categories            -> 200 (OK)
+/reports/summary       -> 200 (OK)
+/tasks/9999            -> 404 (OK)
+/login (seed forte)    -> 200 (OK)   ← senha do seed hasheada e forte
+```
+
+**Mapa completo de endpoints (21):**
 
 ```
 ✅ GET  /                             — API info (v2.0)
@@ -928,7 +989,7 @@ Todos os endpoints testados e funcionando após a refatoração:
 | | ≥ 5 findings | ✅ 13 findings |
 | | APIs deprecated verificadas | ✅ datetime.utcnow() (8 ocorrências) |
 | | Pausa e confirmação | ✅ |
-| **Fase 3** | Estrutura MVC melhorada | ✅ config/, routes/ reorganizados |
+| **Fase 3** | Estrutura MVC melhorada | ✅ config/, models/, routes/ (services/ e utils/ mortos removidos) |
 | | Configuração externalizada | ✅ `.env` + `config/settings.py` |
 | | Models sem dados sensíveis | ✅ `to_dict()` sem password |
 | | Categorias em blueprint próprio | ✅ `category_routes.py` |
@@ -974,7 +1035,7 @@ claude "/refactor-arch"
 **Projeto 1 (Flask — refatorado):**
 ```bash
 cd code-smells-project
-PYTHONPATH=. python src/app.py
+python -m src.app
 # Acessar: http://localhost:5000
 # Testar endpoints:
 curl http://localhost:5000/
@@ -1000,6 +1061,7 @@ curl http://localhost:3000/api/admin/financial-report
 **Projeto 3 (Flask — refatorado):**
 ```bash
 cd task-manager-api
+python seed.py   # popula o banco (agora usa create_app; senhas de seed fortes)
 python app.py
 # Testar endpoints:
 curl http://localhost:5000/
@@ -1009,7 +1071,7 @@ curl -X POST http://localhost:5000/users \
   -d '{"name":"Teste","email":"teste@email.com","password":"senha123456"}'
 curl -X POST http://localhost:5000/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"teste@email.com","password":"senha123456"}'
+  -d '{"email":"joao@email.com","password":"admin@123"}'  # senha do seed
 curl http://localhost:5000/tasks/stats
 curl http://localhost:5000/reports/summary
 # Verificar que senhas não vazam:
