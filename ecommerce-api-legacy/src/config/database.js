@@ -68,8 +68,8 @@ async function initDatabase() {
     await run(db, sql);
   }
 
-  // Seed — senha hasheada via crypto.scrypt
-  const leonanPassHash = await hashPassword('123');
+  // Seed — senha forte (>= MIN_PASSWORD_LENGTH) hasheada via crypto.scrypt
+  const leonanPassHash = await hashPassword('Leonan@123');
   await run(
     db,
     'INSERT INTO users (name, email, pass) VALUES (?, ?, ?)',
