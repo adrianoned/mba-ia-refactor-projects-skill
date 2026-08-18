@@ -235,3 +235,47 @@ Preenchido APÓS a refatoração:
 - O model `Task.is_overdue()` já existe mas não é usado — as rotas duplicam a lógica manualmente
 - O `NotificationService` é código morto (nunca chamado) com credenciais hardcoded
 - A refatoração aqui será mais **cirúrgica** do que estrutural — corrigir problemas pontuais mantendo a organização existente
+
+---
+
+## Re-auditoria pós-refatoração (estado final — 2026-08-18)
+
+### Segunda passada (commit `2beb7a6`)
+
+O projeto já possuía separação de camadas (`config/`, `models/`, `routes/`), mas uma re-auditoria encontrou **10 achados residuais** (CRITICAL: 0, HIGH: 1, MEDIUM: 6, LOW: 3), todos corrigidos de forma cirúrgica:
+
+| Finding | Severidade | Correção |
+|---|---|---|
+| `seed.py` quebrado (`from app import app` → `ImportError`) | HIGH | `from app import create_app` + `create_app()` |
+| `datetime.utcnow()` (5× no seed) | MEDIUM | `datetime.now(timezone.utc)` |
+| `Query.get()` deprecated (14×) | MEDIUM | `db.session.get(Model, id)` |
+| Senhas de seed fracas (`1234`/`abcd`/`pass`) | MEDIUM | `admin@123`/`user@1234`/`manager@123` (hasheadas) |
+| Constantes duplicadas (`settings.py` vs `helpers.py`) | MEDIUM | `utils/helpers.py` removido |
+| Código morto + validação duplicada | MEDIUM | `utils/helpers.py` removido |
+| `NotificationService` código morto | MEDIUM | `services/` removido |
+| Regex de email inconsistente | LOW | eliminado com `utils/helpers.py` |
+| Fallback `SECRET_KEY` | LOW | mantido (padrão TR-01) |
+| Token de login placeholder | LOW | mantido (`secrets.token_hex(32)`) |
+
+### Estado final
+
+```
+task-manager-api/
+├── app.py                    # entry point / composition root
+├── database.py               # db = SQLAlchemy()
+├── seed.py                   # corrigido (create_app)
+├── config/settings.py        # fonte única de constantes + env vars
+├── models/                   # task, user, category
+└── routes/                   # task, user, category, report
+```
+
+| Critério | Status |
+|---|---|
+| Estrutura MVC (`config/`, `models/`, `routes/`) | ✓ |
+| Aplicação inicia sem erros (`create_app()`) | ✓ |
+| Seed executa (3 users / 4 categorias / 10 tasks) | ✓ |
+| Endpoints originais respondem | ✓ (16/16 via test client) |
+| Login com senha forte de seed | ✓ |
+| Zero `Query.get()` / `utcnow()` / imports mortos | ✓ |
+
+**Commit**: `2beb7a6` — "refactor(task-manager-api): corrige seed quebrado e remove código morto".

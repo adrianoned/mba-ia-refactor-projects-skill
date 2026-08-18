@@ -251,3 +251,65 @@ Preenchido APÓS a refatoração:
 - Os endpoints são: POST `/api/checkout`, GET `/api/admin/financial-report`, DELETE `/api/users/:id`
 - A refatoração deve preservar exatamente o comportamento e formato de resposta dos 3 endpoints originais
 - O nome "Frankenstein LMS" no log de startup reflete a natureza "monstro" do código atual
+
+---
+
+## Re-auditoria pós-refatoração (estado final — 2026-08-18)
+
+### Fase 3 — refatoração para MVC
+
+A refatoração eliminou os 20 findings da auditoria inicial, reestruturando o projeto em MVC com injeção de dependência:
+
+```
+src/
+├── app.js                        # composition root — injeta models nos controllers
+├── config/
+│   ├── database.js               # schema + seeds (initDatabase)
+│   └── settings.js               # credenciais via process.env
+├── models/
+│   ├── User.js / Course.js / Enrollment.js / Payment.js / AuditLog.js
+├── controllers/
+│   ├── CheckoutController.js     # fluxo de checkout (sem req/res)
+│   ├── ReportController.js       # relatório financeiro (batch queries)
+│   └── UserController.js         # deleção com cascade
+├── routes/
+│   └── index.js                  # apenas roteamento + delegação
+├── middlewares/
+│   └── errorHandler.js           # tratamento centralizado de erros
+└── utils/
+    ├── crypto.js                 # crypto.scrypt + salt
+    ├── constants.js              # PAYMENT_STATUS
+    └── logger.js                 # logging estruturado
+```
+
+### Re-auditoria (commit `1a509d3`)
+
+A segunda passada encontrou 10 achados residuais (CRITICAL: 0, HIGH: 4, MEDIUM: 4, LOW: 2) e os corrigiu:
+
+| Finding | Correção |
+|---|---|
+| AP-07 senha plaintext no seed | `hashPassword()` antes de inserir |
+| AP-07 senha default `password \|\| '123456'` | removido; senha obrigatória (mín. 6) |
+| Integridade referencial (órfãos) | deleção em cascata payments → enrollments → user |
+| `/admin/*` sem autenticação | documentado como dívida técnica (não altera contrato) |
+| AP-11 validação incompleta | courseId inteiro, cartão `/^\d{13,19}$/`, senha mínima |
+| AP-12/AP-10 erros | rotas propagam `next(err)` ao middleware centralizado |
+| AP-14 logging | `utils/logger.js` (níveis + timestamp) |
+| AP-13 magic strings | `utils/constants.js` com `PAYMENT_STATUS` |
+
+### 3ª passada (commit `5c6eb73`)
+
+Senha do seed fortalecida: `'123'` (3 chars, abaixo de `MIN_PASSWORD_LENGTH=6`) → `'Leonan@123'`, mantendo hash via `crypto.scrypt`.
+
+### Estado final
+
+| Critério | Status |
+|---|---|
+| Estrutura MVC | ✓ |
+| Configuração externalizada (sem hardcoded) | ✓ |
+| Senhas hasheadas (crypto.scrypt) e sem fallback default | ✓ |
+| Zero CRITICAL / HIGH remanescentes | ✓ (auth `/admin` registrado como dívida) |
+| Aplicação inicia sem erros | ✓ |
+| Endpoints originais respondem | ✓ (checkout sucesso/recusado, relatório, delete) |
+
+**Commits**: `1a509d3` (Fase 3), `5c6eb73` (senha do seed).

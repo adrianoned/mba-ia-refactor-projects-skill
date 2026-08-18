@@ -346,3 +346,33 @@ Todos os 15 endpoints testados e funcionando:
 - ✅ `GET /health` — Sem dados sensiveis
 - ✅ `POST /admin/query` → **404** (removido com sucesso)
 - ✅ `POST /admin/reset-db` — Reset seguro mantido
+
+---
+
+## Re-auditoria pós-refatoração (estado final — 2026-08-18)
+
+### Passadas adicionais
+
+Após a Fase 3 inicial, duas rodadas complementares levaram o projeto ao estado final:
+
+1. **2ª passada** (commit `7c65873`) — eliminou os últimos resíduos de acesso a dados na camada de view:
+   - `src/services/admin_service.py` — `AdminService.reset_database()` (reset-db fora da rota, conforme TR-04)
+   - `src/services/health_service.py` — `HealthService.check()` (health fora da rota)
+   - `src/views/routes.py` — `reset_database` e `health_check` agora apenas delegam
+2. **3ª passada** (commit `5c6eb73`) — removeu os arquivos legados da raiz:
+   - `app.py`, `controllers.py`, `models.py`, `database.py` (que continham os anti-patterns originais, incluindo `POST /admin/query` com SQL arbitrário e `SECRET_KEY` hardcoded)
+   - `README.md` atualizado para apontar para `python -m src.app`
+
+### Estado final
+
+| Critério | Status |
+|---|---|
+| Estrutura MVC (`src/config`, `src/models`, `src/controllers`, `src/views`, `src/middlewares`, `src/services`) | ✓ |
+| Zero acesso a dados em handlers de rota (`get_db`/`cursor.execute`/`commit`) | ✓ |
+| Zero CRITICAL / HIGH remanescentes | ✓ |
+| Arquivos legados vulneráveis removidos do repositório | ✓ |
+| Aplicação inicia sem erros (`python -m src.app`) | ✓ |
+| Endpoints originais respondem | ✓ (17/17) |
+| `POST /admin/query` (SQL arbitrário) | ✓ removido → 404 |
+
+**Commits**: `7c65873` (extrai reset-db/health), `5c6eb73` (remove legado).
